@@ -1,16 +1,13 @@
 import argparse
 import matplotlib.pyplot as plt
 import mne
-import os
-from time import time
-from mne import Epochs
 from mne.datasets import eegbci, sample
-from mne.io.edf import read_raw_edf
-from mne import Epochs, pick_types, events_from_annotations
-from mne.channels import make_standard_montage
-from mne.io import concatenate_raws, read_raw_edf
 from mne.preprocessing import (ICA, create_eog_epochs, create_ecg_epochs,
                                corrmap)
+from mne import Epochs
+from mne.channels import make_standard_montage
+from mne.io import concatenate_raws, read_raw_edf
+
 
 mne.set_log_level('WARNING')
 
@@ -21,38 +18,56 @@ def parse_args():
     parser.add_argument('--testee', default=1)
     parser.add_argument('--task', default='imagery')
     parser.add_argument('--bodypart', default='feet')
-    parser.add_argument('--viz', default=0)
+    parser.add_argument('--viz', action="store_true")
+    parser.add_argument('--clear', action="store_true")
     args = parser.parse_args()
     return args.__dict__
 
 
-# def removing_artifacts(raw, n_components, method='fastica'):
-#     if method == 'infomax' or method == 'picard':
-#         fit_params = {"extended": True}  # chose parameters for different methods
-#     raw_tmp = raw.copy()
-#     picks = mne.pick_types(raw_tmp.info, meg=False, eeg=True, eog=False, stim=False, exclude='bads')
-#     ica = ICA(n_components=n_components, method='fastica', random_state=21, fit_params=None)
-#     ica.fit(raw_tmp, picks=picks)
-#     ica.plot_components(picks=range(20), inst=raw_tmp)
-#
-#     eog_indices, scores = ica.find_bads_eog(raw, ch_name='Fpz', threshold=1.5)
-#     ica.plot_scores(scores, exclude=eog_indices)
-#     ica.exclude.extend(eog_indices)
-#     raw_tmp = ica.apply(raw_tmp, n_pca_components=n_components, exclude=ica.exclude)
-#     print('Bad components to remove:', ica.exclude)
-#     plt.show()
-#     return raw_tmp
+def removing_artifacts(raw, n_components):
+    raw_tmp = raw.copy().filter(l_freq=1., h_freq=None)
+    picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False, exclude='bads')
+    ica = ICA(n_components=n_components, max_iter='auto', random_state=21)
+    ica.fit(raw_tmp, picks=picks)
+    ica.plot_components(picks=range(20), inst=raw_tmp)
 
+    eog_indices, scores = ica.find_bads_eog(raw_tmp, ch_name='Fpz', threshold=1.5)
+    ica.plot_scores(scores, exclude=eog_indices)
+    ica.exclude.extend(eog_indices)
+    raw_tmp = ica.apply(raw_tmp, n_pca_components=n_components, exclude=ica.exclude)
+    print('Bad components to remove:', ica.exclude)
+    plt.show()
+    return raw_tmp
 
-def get_clear(raw):
+def removing_artifacts2(raw, n_components):
+    filt_raw = raw.copy().load_data().filter(l_freq=1., h_freq=None)
+    ica = ICA(n_components=15, max_iter='auto', random_state=97)
+    ica.fit(filt_raw)
+    ica.exclude = [0, 1]
+    print('Bad components to remove:', ica.exclude)
+    ica.exclude = []
+    # find which ICs match the EOG pattern
+    eog_indices, eog_scores = ica.find_bads_eog(raw)
+    ica.exclude = eog_indices
+    # barplot of ICA component "EOG match" scores
+    ica.plot_scores(eog_scores)
+    # plot diagnostics
+    ica.plot_properties(raw, picks=eog_indices)
+    # plot ICs applied to raw data, with EOG matches highlighted
+    ica.plot_sources(raw, show_scrollbars=False)
+    plt.show()
+
+def get_clear(raw, clear):
     raw_tmp = raw.copy()
-    #raw_tmp = removing_artifacts(raw_tmp, 20, 'fastica')
     data = raw_tmp.filter(7., 40., fir_design='firwin', skip_by_annotation='edge')  # Apply band-pass filter
+    if clear == True:
+        raw_tmp = removing_artifacts(raw_tmp, 20)
     return data
 
 
 def get_raw(testee, task, taskname, data_name):
     print('... Parsing of', taskname, 'runs of', data_name)
+    print(testee, task)
     raw_fnames = eegbci.load_data(testee, task)
     raw = concatenate_raws([read_raw_edf(f, preload=True) for f in raw_fnames])
     eegbci.standardize(raw)  # set channel names
@@ -90,7 +105,7 @@ def main_preproc(data_name, testee, task, viz):
             raw = get_raw(testee, imagery_lr, task, data_name)
         else:
             exit()
-        clear = get_clear(raw)
+        clear = get_clear(raw, args['clear'])
         if viz == True:
             print('Vizualization')
             plot_object(biosemi_montage, 'plots/1.biosemi_montage.png')
@@ -110,6 +125,8 @@ def main_preproc(data_name, testee, task, viz):
         event_id = dict(aud_l=1, vis_l=3)
         raw = mne.io.read_raw_fif(raw_fname, preload=True)
         raw.filter(1, 20, fir_design='firwin')
+        if args['clear'] == True:
+            removing_artifacts2(raw, 20)
         events = mne.read_events(event_fname)
         picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False,
                                exclude='bads')
@@ -123,4 +140,4 @@ def main_preproc(data_name, testee, task, viz):
 
 if __name__ == '__main__':
     args = parse_args()
-    main_preproc(data_name=args['data'], testee=args['testee'], task=args['task'], viz=args['viz'])
+    main_preproc(data_name=args['data'], testee=int(args['testee']), task=args['task'], viz=args['viz'])

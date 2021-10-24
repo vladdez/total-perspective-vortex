@@ -1,27 +1,13 @@
-"""
-Linear Discriminant Analysis and Quadratic Discriminant Analysis
-"""
-
-# Authors: Clemens Brunner
-#          Martin Billinger
-#          Matthieu Perrot
-#          Mathieu Blondel
-
-# License: BSD 3-Clause
-
 import warnings
 import numpy as np
 from scipy import linalg
 from scipy.special import expit
 
-from sklearn.base import BaseEstimator, TransformerMixin, ClassifierMixin
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.linear_model._base import LinearClassifierMixin
-from sklearn.covariance import ledoit_wolf, empirical_covariance, shrunk_covariance
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
-from sklearn.utils.extmath import softmax
-from sklearn.preprocessing import StandardScaler
 
 def _class_means(X, y):
     classes, y = np.unique(y, return_inverse=True)
