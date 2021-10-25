@@ -8,16 +8,13 @@ from mne import Epochs
 from mne.channels import make_standard_montage
 from mne.io import concatenate_raws, read_raw_edf
 
-
 mne.set_log_level('WARNING')
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', default='eegbci')
     parser.add_argument('--testee', default=1)
-    parser.add_argument('--task', default='imagery')
-    parser.add_argument('--bodypart', default='feet')
+    parser.add_argument('--task', default='imagery feet-hand')
     parser.add_argument('--viz', action="store_true")
     parser.add_argument('--clear', action="store_true")
     args = parser.parse_args()
@@ -58,16 +55,17 @@ def removing_artifacts2(raw, n_components):
     plt.show()
 
 def get_clear(raw, clear):
-    raw_tmp = raw.copy()
-    data = raw_tmp.filter(7., 40., fir_design='firwin', skip_by_annotation='edge')  # Apply band-pass filter
+    filtered_data = raw.copy()
+    filtered_data = filtered_data.filter(7., 40., fir_design='firwin', skip_by_annotation='edge')  # Apply band-pass filter
     if clear == True:
-        raw_tmp = removing_artifacts(raw_tmp, 20)
-    return data
+        clear_data = removing_artifacts(filtered_data, 20)
+    else:
+        clear_data = filtered_data
+    return filtered_data, clear_data
 
 
 def get_raw(testee, task, taskname, data_name):
-    print('... Parsing of', taskname, 'runs of', data_name)
-    print(testee, task)
+    print('... Parsing:', 'task', taskname, 'runs of', task, 'in', data_name, 'dataset for subject', testee)
     raw_fnames = eegbci.load_data(testee, task)
     raw = concatenate_raws([read_raw_edf(f, preload=True) for f in raw_fnames])
     eegbci.standardize(raw)  # set channel names
@@ -78,14 +76,16 @@ def get_raw(testee, task, taskname, data_name):
 
 def plot_object(object, name, add=1):
     if add == 1:
-        object.plot()
+        object.plot()    
+        plt.draw()
+        plt.savefig(name, dpi=100)
+        plt.close()
     else:
         object.plot_psd(average=False)
-    plt.savefig(name)
-    plt.close()
 
 
-def main_preproc(data_name, testee, task, viz):
+
+def main_preproc(data_name, testee, task, viz, clear):
     if data_name == 'eegbci':
         tmin, tmax = -1., 4.  # avoid classification of evoked responses by using epochs that start 1s after cue onset.
         execution_fh = [5, 9, 13]
@@ -105,17 +105,19 @@ def main_preproc(data_name, testee, task, viz):
             raw = get_raw(testee, imagery_lr, task, data_name)
         else:
             exit()
-        clear = get_clear(raw, args['clear'])
+        filtered_data, clear_data = get_clear(raw, clear)
         if viz == True:
             print('Vizualization')
             plot_object(biosemi_montage, 'plots/1.biosemi_montage.png')
             plot_object(raw, 'plots/2.raw_time.png')
-            plot_object(clear, 'plots/3.clear_time.png')
+            plot_object(clear_data, 'plots/3.clear_time.png')
             plot_object(raw, 'plots/4.raw_frequency.png', 2)
-            plot_object(clear, 'plots/5.clear_frequency.png', 2)
-        events, _ = mne.events_from_annotations(clear, event_id=dict(T1=2, T2=3))
-        picks = mne.pick_types(clear.info, meg=False, eeg=True, eog=False, stim=False, exclude='bads')
-        epochs = Epochs(clear, events, event_id, tmin, tmax, proj=True, picks=picks, baseline=None, preload=True)
+            if clear == True:
+                plot_object(filtered_data, 'plots/5.clear_frequency.png', 2)
+            plot_object(clear_data, 'plots/5.clear_frequency.png', 2)
+        events, _ = mne.events_from_annotations(clear_data, event_id=dict(T1=2, T2=3))
+        picks = mne.pick_types(clear_data.info, meg=False, eeg=True, eog=False, stim=False, exclude='bads')
+        epochs = Epochs(clear_data, events, event_id, tmin, tmax, proj=True, picks=picks, baseline=None, preload=True)
     elif data_name == 'sample':
         print('... Parsing of sample dataset')
         data_path = sample.data_path()
@@ -125,7 +127,7 @@ def main_preproc(data_name, testee, task, viz):
         event_id = dict(aud_l=1, vis_l=3)
         raw = mne.io.read_raw_fif(raw_fname, preload=True)
         raw.filter(1, 20, fir_design='firwin')
-        if args['clear'] == True:
+        if clear == True:
             removing_artifacts2(raw, 20)
         events = mne.read_events(event_fname)
         picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False, eog=False,
@@ -133,6 +135,7 @@ def main_preproc(data_name, testee, task, viz):
         epochs = mne.Epochs(raw, events, event_id, tmin, tmax, proj=False,
                             picks=picks, baseline=None, preload=True,
                             verbose=False)
+        epochs.plot_psd(picks='eeg')
     else:
         raise NotImplementedError('No code for such dataset')
     return epochs
@@ -140,4 +143,4 @@ def main_preproc(data_name, testee, task, viz):
 
 if __name__ == '__main__':
     args = parse_args()
-    main_preproc(data_name=args['data'], testee=int(args['testee']), task=args['task'], viz=args['viz'])
+    main_preproc(data_name=args['data'], testee=int(args['testee']), task=args['task'], viz=args['viz'], clear=args['clear'])

@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument('--testee', default=1)
     parser.add_argument('--verbose', action="store_true")
     parser.add_argument('--viz', action="store_true")
+    parser.add_argument('--clear', action="store_false")
     parser.add_argument('--algo', default='CSP')
     parser.add_argument('--class', default='LDA')
     args = parser.parse_args()
@@ -41,7 +42,6 @@ def main_train():
     classif = ('LDA', lda)
     if args['data'] == 'eegbci':
         conditions = ['imagery feet-hand', 'execution feet-hand', 'imagery left-right', 'execution left-right']
-
         # Assemble a classifier
         csp = my_CSP(n_components=3)
         pca = my_PCA(n_components=2)
@@ -49,7 +49,7 @@ def main_train():
 
         #for t in conditions:
         for t in ['imagery feet-hand']:
-            epochs = main_preproc(data_name=args['data'], testee=testee, task=t, viz=args['viz'])
+            epochs = main_preproc(data_name=args['data'], testee=testee, task=t, viz=args['viz'], clear=False)
             epochs_train = epochs.copy().crop(tmin=0., tmax=2.)
             labels = epochs.events[:, -1] - 2
             # epochs_data = epochs.get_data()
@@ -84,7 +84,7 @@ def main_train():
         print('Mean prediction f1', round(np.mean(predicted), 2))
     elif args['data'] == 'sample':
         conditions = ['auditory/left', 'visual/left']
-        epochs = main_preproc(data_name=args['data'], testee=testee, task=None, viz=args['viz'])
+        epochs = main_preproc(data_name=args['data'], testee=testee, task=None, viz=args['viz'], clear=False)
         X = epochs.get_data()
         labels = epochs.events[:, -1]
         csp = my_CSP(n_components=3)
